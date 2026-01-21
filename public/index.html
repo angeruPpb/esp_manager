@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 OTA Manager</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            max-width: 1000px; 
+            margin: 50px auto;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 20px;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        input, button, select {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        select {
+            width: 100%;
+            max-width: 400px;
+        }
+        button {
+            background: #238636;
+            border-color: #238636;
+            cursor: pointer;
+        }
+        button:hover { background: #2ea043; }
+        button.delete { background: #da3633; border-color: #da3633; }
+        button.delete:hover { background: #f85149; }
+        .firmware-item, .device-item {
+            background: #0d1117;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 3px solid #238636;
+        }
+        .online { border-left-color: #3fb950; }
+        .offline { border-left-color: #f85149; }
+        code {
+            background: #0d1117;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 ESP32 OTA Manager</h1>
+    
+    <div class="grid">
+        <div class="card">
+            <h3>📱 Registrar Dispositivo</h3>
+            <input type="text" id="deviceName" placeholder="Nombre del dispositivo (ej: ESP32-Cocina)">
+            <button onclick="registerDevice()">➕ Registrar</button>
+            <div id="apiKeyResult" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="card">
+            <h3>📤 Subir Firmware (.bin)</h3>
+            <select id="deviceSelect">
+                <option value="">Seleccione un dispositivo...</option>
+            </select>
+            <input type="file" id="firmwareFile" accept=".bin">
+            <input type="text" id="version" placeholder="Versión (ej: 1.0.0)">
+            <input type="text" id="description" placeholder="Descripción">
+            <button onclick="uploadFirmware()">Subir</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🖥️ Dispositivos Registrados</h3>
+        <button onclick="loadDevices()">🔄 Recargar</button>
+        <div id="devicesList"></div>
+    </div>
+
+    <div class="card">
+        <h3>📋 Firmwares Disponibles</h3>
+        <button onclick="loadFirmwares()">🔄 Recargar</button>
+        <div id="firmwareList"></div>
+    </div>
+
+    <script>
+        let devicesCache = [];
+
+        // ============ DISPOSITIVOS ============
+        async function registerDevice() {
+            const name = document.getElementById('deviceName').value;
+            if (!name) {
+                alert('Ingresa un nombre para el dispositivo');
+                return;
+            }
+
+            const res = await fetch('/esp/firmware/devices/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+
+            const data = await res.json();
+            const resultDiv = document.getElementById('apiKeyResult');
+            
+            if (data.isNew) {
+                resultDiv.innerHTML = `
+                    <div style="background: #238636; padding: 15px; border-radius: 6px; margin-top: 10px;">
+                        <strong>✅ Dispositivo registrado exitosamente</strong><br>
+                        <strong>Nombre:</strong> ${data.device.name}<br>
+                        <strong>API Key:</strong> <code>${data.device.apiKey}</code><br>
+                        <small>⚠️ Guarda esta clave, la necesitarás en el ESP32</small>
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div style="background: #1f6feb; padding: 15px; border-radius: 6px; margin-top: 10px;">
+                        <strong>ℹ️ Este dispositivo ya estaba registrado</strong><br>
+                        <strong>Nombre:</strong> ${data.device.name}<br>
+                        <strong>API Key:</strong> <code>${data.device.apiKey}</code><br>
+                        <small>💡 Usa la misma API Key que antes</small>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('deviceName').value = '';
+            loadDevices();
+        }
+
+        async function loadDevices() {
+            const res = await fetch('/esp/firmware/devices');
+            const devices = await res.json();
+            devicesCache = devices;
+
+            const select = document.getElementById('deviceSelect');
+            select.innerHTML = '<option value="">Seleccione un dispositivo...</option>' +
+                devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+
+            const list = document.getElementById('devicesList');
+            const now = new Date();
+
+            list.innerHTML = devices.map(d => {
+                const lastCheck = new Date(d.lastCheck);
+                const diffSeconds = (now - lastCheck) / 1000;
+                const isOnline = diffSeconds < 60;
+                const status = isOnline ? 'online' : 'offline';
+
+                return `
+                    <div class="device-item ${status}">
+                        <strong>${d.name}</strong> 
+                        <span style="color: ${isOnline ? '#3fb950' : '#f85149'}">
+                            ${isOnline ? '🟢 Online' : '🔴 Offline'}
+                        </span><br>
+                        <small>ID: <code>${d.id}</code></small><br>
+                        <small>Versión actual: <code>${d.currentVersion}</code></small><br>
+                        <small>Última consulta: ${lastCheck.toLocaleString()}</small><br>
+                        <small>IP: ${d.ipAddress || 'N/A'}</small><br>
+                        <small>API Key: <code>${d.apiKey}</code></small><br>
+                        <button class="delete" onclick="deleteDevice('${d.id}')">🗑️ Eliminar</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteDevice(id) {
+            if (!confirm('¿Eliminar este dispositivo?')) return;
+            await fetch(`/esp/firmware/devices/${id}`, { method: 'DELETE' });
+            loadDevices();
+        }
+
+        // ============ FIRMWARES ============
+        async function uploadFirmware() {
+            const file = document.getElementById('firmwareFile').files[0];
+            const version = document.getElementById('version').value;
+            const description = document.getElementById('description').value;
+            const deviceId = document.getElementById('deviceSelect').value;
+
+            if (!deviceId) {
+                alert('Selecciona un dispositivo');
+                return;
+            }
+
+            if (!file) {
+                alert('Selecciona un archivo .bin');
+                return;
+            }
+
+            if (!version) {
+                alert('Ingresa una versión');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('firmware', file);
+            formData.append('version', version);
+            formData.append('description', description);
+            formData.append('deviceId', deviceId);
+
+            const res = await fetch('/esp/firmware/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            alert(`✅ Firmware subido: ${data.firmware.filename}\nURL: ${data.firmware.url}`);
+            
+            document.getElementById('firmwareFile').value = '';
+            document.getElementById('version').value = '';
+            document.getElementById('description').value = '';
+            document.getElementById('deviceSelect').value = '';
+            
+            loadFirmwares();
+        }
+
+        async function loadFirmwares() {
+            const res = await fetch('/esp/firmware/list');
+            const firmwares = await res.json();
+
+            const list = document.getElementById('firmwareList');
+            list.innerHTML = firmwares.map(f => {
+                const device = devicesCache.find(d => d.id === f.deviceId);
+                const deviceName = device ? device.name : 'Desconocido';
+
+                return `
+                    <div class="firmware-item">
+                        <strong>v${f.version}</strong> - ${f.description}<br>
+                        <small>🎯 Dispositivo: <strong>${deviceName}</strong> (ID: ${f.deviceId})</small><br>
+                        <small>Archivo: ${f.filename} (${(f.size/1024).toFixed(2)} KB)</small><br>
+                        <small>Subido: ${new Date(f.uploadDate).toLocaleString()}</small><br>
+                        <small>URL: <code>${f.url}</code></small><br>
+                        <button class="delete" onclick="deleteFirmware('${f.id}')">🗑️ Eliminar</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteFirmware(id) {
+            if (!confirm('¿Eliminar este firmware?')) return;
+            await fetch(`/esp/firmware/${id}`, { method: 'DELETE' });
+            loadFirmwares();
+        }
+
+        loadDevices();
+        loadFirmwares();
+        setInterval(loadDevices, 10000);
+    </script>
+</body>
+</html>
