@@ -7,5 +7,16 @@
     "lastCheck": "2026-01-20T21:59:16.415Z",
     "ipAddress": "192.168.1.19",
     "registered": "2026-01-15T14:07:33.155Z"
+  },
+  {
+    "id": "1769025952198",
+    "name": "try",
+    "apiKey": "esp32_1e262cd7d110812f5726055a6e672b92",
+    "currentVersion": "0.0.0",
+    "lastCheck": "2026-01-21T20:05:52.198Z",
+    "ipAddress": "",
+    "registered": "2026-01-21T20:05:52.198Z",
+    "lastUpdateStatus": "none",
+    "lastUpdateDate": ""
   }
 ]

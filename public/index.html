@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>ESP32 OTA Manager</title>
+    <script src="/socket.io/socket.io.js"></script>
     <style>
         body { 
             font-family: monospace; 
@@ -99,23 +100,32 @@
     </div>
 
     <script>
+        const socket = io();
         let devicesCache = [];
 
+        // ============ CONEXIÓN WEBSOCKET ============
+        socket.on('connect', () => {
+            console.log('✅ Conectado al servidor WebSocket');
+            loadDevices();
+            loadFirmwares();
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ Desconectado del servidor WebSocket');
+        });
+
         // ============ DISPOSITIVOS ============
-        async function registerDevice() {
+        function registerDevice() {
             const name = document.getElementById('deviceName').value;
             if (!name) {
                 alert('Ingresa un nombre para el dispositivo');
                 return;
             }
 
-            const res = await fetch('/esp/firmware/devices/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
-            });
+            socket.emit('register_device', { name });
+        }
 
-            const data = await res.json();
+        socket.on('device_registered', (data) => {
             const resultDiv = document.getElementById('apiKeyResult');
             
             if (data.isNew) {
@@ -139,12 +149,21 @@
             }
             
             document.getElementById('deviceName').value = '';
-            loadDevices();
+        });
+
+        function loadDevices() {
+            socket.emit('get_devices');
         }
 
-        async function loadDevices() {
-            const res = await fetch('/esp/firmware/devices');
-            const devices = await res.json();
+        socket.on('devices_list', (devices) => {
+            updateDevicesList(devices);
+        });
+
+        socket.on('devices_update', (devices) => {
+            updateDevicesList(devices);
+        });
+
+        function updateDevicesList(devices) {
             devicesCache = devices;
 
             const select = document.getElementById('deviceSelect');
@@ -160,6 +179,27 @@
                 const isOnline = diffSeconds < 60;
                 const status = isOnline ? 'online' : 'offline';
 
+                let updateStatusHTML = '';
+                if (d.lastUpdateStatus && d.lastUpdateStatus !== 'none') {
+                    const statusIcons = {
+                        'success': '✅ Actualización exitosa',
+                        'failed': '❌ Actualización fallida',
+                        'pending': '⏳ Actualización pendiente'
+                    };
+                    const statusColors = {
+                        'success': '#3fb950',
+                        'failed': '#f85149',
+                        'pending': '#d29922'
+                    };
+                    
+                    updateStatusHTML = `
+                        <small style="color: ${statusColors[d.lastUpdateStatus]}">
+                            ${statusIcons[d.lastUpdateStatus]}
+                            ${d.lastUpdateDate ? `(${new Date(d.lastUpdateDate).toLocaleString()})` : ''}
+                        </small><br>
+                    `;
+                }
+
                 return `
                     <div class="device-item ${status}">
                         <strong>${d.name}</strong> 
@@ -168,6 +208,7 @@
                         </span><br>
                         <small>ID: <code>${d.id}</code></small><br>
                         <small>Versión actual: <code>${d.currentVersion}</code></small><br>
+                        ${updateStatusHTML}
                         <small>Última consulta: ${lastCheck.toLocaleString()}</small><br>
                         <small>IP: ${d.ipAddress || 'N/A'}</small><br>
                         <small>API Key: <code>${d.apiKey}</code></small><br>
@@ -177,10 +218,9 @@
             }).join('');
         }
 
-        async function deleteDevice(id) {
+        function deleteDevice(id) {
             if (!confirm('¿Eliminar este dispositivo?')) return;
-            await fetch(`/esp/firmware/devices/${id}`, { method: 'DELETE' });
-            loadDevices();
+            socket.emit('delete_device', { id });
         }
 
         // ============ FIRMWARES ============
@@ -223,14 +263,26 @@
             document.getElementById('version').value = '';
             document.getElementById('description').value = '';
             document.getElementById('deviceSelect').value = '';
-            
-            loadFirmwares();
         }
 
-        async function loadFirmwares() {
-            const res = await fetch('/esp/firmware/list');
-            const firmwares = await res.json();
+        function loadFirmwares() {
+            socket.emit('get_firmwares');
+        }
 
+        socket.on('firmwares_list', (firmwares) => {
+            updateFirmwaresList(firmwares);
+        });
+
+        socket.on('firmwares_update', (firmwares) => {
+            updateFirmwaresList(firmwares);
+        });
+
+        socket.on('firmware_uploaded', (firmware) => {
+            console.log('✅ Nuevo firmware subido:', firmware);
+            loadFirmwares();
+        });
+
+        function updateFirmwaresList(firmwares) {
             const list = document.getElementById('firmwareList');
             list.innerHTML = firmwares.map(f => {
                 const device = devicesCache.find(d => d.id === f.deviceId);
@@ -249,14 +301,16 @@
             }).join('');
         }
 
-        async function deleteFirmware(id) {
+        function deleteFirmware(id) {
             if (!confirm('¿Eliminar este firmware?')) return;
-            await fetch(`/esp/firmware/${id}`, { method: 'DELETE' });
-            loadFirmwares();
+            socket.emit('delete_firmware', { id });
         }
 
-        loadDevices();
-        loadFirmwares();
+        socket.on('device_updated', (data) => {
+            console.log('✅ Dispositivo actualizado:', data);
+        });
+
+        // Auto-recargar cada 10 segundos (ahora usando WebSocket)
         setInterval(loadDevices, 10000);
     </script>
 </body>

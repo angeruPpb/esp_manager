@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from 'fs';
 import { join } from 'path';
 import * as crypto from 'crypto';
@@ -22,6 +22,8 @@ export interface Device {
   lastCheck: string;
   ipAddress: string;
   registered: string;
+  lastUpdateStatus?: 'success' | 'failed' | 'pending' | 'none';
+  lastUpdateDate?: string;
 }
 
 @Injectable()
@@ -62,25 +64,21 @@ export class EspService {
     writeFileSync(this.devicesDbPath, JSON.stringify(data, null, 2));
   }
 
-  // ============ DISPOSITIVOS ============
-
   async registerDevice(name: string): Promise<{ device: Device; isNew: boolean }> {
     const devices = this.getDevicesDb();
     
-    // Verificar si ya existe un dispositivo con ese nombre
     const existingDevice = devices.find(d => d.name.toLowerCase() === name.toLowerCase());
     
     if (existingDevice) {
-      // Devolver el dispositivo existente
       return { 
         device: existingDevice, 
         isNew: false 
       };
     }
 
-    // Generar API Key determinística basada en el nombre
     const apiKey = this.generateApiKeyFromName(name);
 
+    // Genera un ID único simple
     const device: Device = {
       id: Date.now().toString(),
       name,
@@ -89,6 +87,8 @@ export class EspService {
       lastCheck: new Date().toISOString(),
       ipAddress: '',
       registered: new Date().toISOString(),
+      lastUpdateStatus: 'none',
+      lastUpdateDate: '',
     };
 
     devices.push(device);
@@ -124,14 +124,53 @@ export class EspService {
     const deviceIndex = devices.findIndex(d => d.apiKey === apiKey);
 
     if (deviceIndex !== -1) {
+      const previousVersion = devices[deviceIndex].currentVersion;
+      
       devices[deviceIndex].currentVersion = currentVersion;
       devices[deviceIndex].lastCheck = new Date().toISOString();
       devices[deviceIndex].ipAddress = ipAddress;
+      
+      if (previousVersion !== currentVersion && previousVersion !== '0.0.0') {
+        devices[deviceIndex].lastUpdateStatus = 'success';
+        devices[deviceIndex].lastUpdateDate = new Date().toISOString();
+      }
+      
       this.saveDevicesDb(devices);
     }
   }
 
-  // ============ FIRMWARES ============
+  confirmUpdateSuccess(apiKey: string, newVersion: string) {
+    const devices = this.getDevicesDb();
+    const deviceIndex = devices.findIndex(d => d.apiKey === apiKey);
+
+    if (deviceIndex !== -1) {
+      devices[deviceIndex].lastUpdateStatus = 'success';
+      devices[deviceIndex].lastUpdateDate = new Date().toISOString();
+      devices[deviceIndex].currentVersion = newVersion;
+      this.saveDevicesDb(devices);
+    }
+  }
+
+  markUpdateFailed(apiKey: string, error: string) {
+    const devices = this.getDevicesDb();
+    const deviceIndex = devices.findIndex(d => d.apiKey === apiKey);
+
+    if (deviceIndex !== -1) {
+      devices[deviceIndex].lastUpdateStatus = 'failed';
+      devices[deviceIndex].lastUpdateDate = new Date().toISOString();
+      this.saveDevicesDb(devices);
+    }
+  }
+
+  markUpdatePending(deviceId: string) {
+    const devices = this.getDevicesDb();
+    const deviceIndex = devices.findIndex(d => d.id === deviceId);
+
+    if (deviceIndex !== -1) {
+      devices[deviceIndex].lastUpdateStatus = 'pending';
+      this.saveDevicesDb(devices);
+    }
+  }
 
   async saveFirmware(
     file: Express.Multer.File, 
@@ -139,7 +178,6 @@ export class EspService {
   ) {
     const db = this.getDb();
     
-    // Renombrar archivo con la versión correcta
     const newFilename = `esp32_v${metadata.version}_${metadata.deviceId}.bin`;
     const oldPath = join(this.uploadsDir, file.filename);
     const newPath = join(this.uploadsDir, newFilename);
@@ -159,6 +197,8 @@ export class EspService {
 
     db.push(firmware);
     this.saveDb(db);
+
+    this.markUpdatePending(metadata.deviceId);
 
     return { success: true, firmware };
   }
@@ -197,29 +237,14 @@ export class EspService {
     return { success: true, message: 'Firmware eliminado' };
   }
 
-  // ============ GENERACIÓN DE API KEY ============
-
-  /**
-   * Genera una API Key determinística basada en el nombre del dispositivo
-   * Siempre generará la misma key para el mismo nombre
-   */
   private generateApiKeyFromName(name: string): string {
-    // Usar SHA256 para generar un hash del nombre
     const hash = crypto
       .createHash('sha256')
       .update(name.toLowerCase().trim())
       .digest('hex');
     
-    // Tomar los primeros 32 caracteres del hash
     const shortHash = hash.substring(0, 32);
     
     return `esp32_${shortHash}`;
-  }
-
-  /**
-   * Genera una API Key aleatoria (método anterior - ya no se usa)
-   */
-  private generateRandomApiKey(): string {
-    return 'esp32_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
 }

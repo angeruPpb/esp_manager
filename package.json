@@ -25,10 +25,14 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/mapped-types": "*",
     "@nestjs/platform-express": "^11.1.11",
+    "@nestjs/platform-socket.io": "^11.1.12",
     "@nestjs/serve-static": "^5.0.4",
+    "@nestjs/websockets": "^11.1.12",
     "multer": "^2.0.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

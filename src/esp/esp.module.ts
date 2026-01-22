@@ -4,6 +4,7 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { EspController } from './esp.controller';
 import { EspService } from './esp.service';
+import { EspGateway } from './esp.gateway'; // ← Verificar que el path sea correcto
 import { existsSync, mkdirSync } from 'fs';
 
 @Module({
@@ -13,7 +14,6 @@ import { existsSync, mkdirSync } from 'fs';
         destination: (req, file, cb) => {
           const uploadPath = join(__dirname, '..', '..', 'uploads', 'firmware');
           
-          // Crear directorio si no existe
           if (!existsSync(uploadPath)) {
             mkdirSync(uploadPath, { recursive: true });
           }
@@ -21,9 +21,6 @@ import { existsSync, mkdirSync } from 'fs';
           cb(null, uploadPath);
         },
         filename: (req, file, cb) => {
-          // Multer procesa el archivo ANTES del body parser
-          // Por eso no podemos acceder a req.body.version aquí
-          // Solución: usar timestamp y renombrar después en el service
           const uniqueSuffix = Date.now();
           const filename = `temp_${uniqueSuffix}${extname(file.originalname)}`;
           cb(null, filename);
@@ -38,6 +35,6 @@ import { existsSync, mkdirSync } from 'fs';
     }),
   ],
   controllers: [EspController],
-  providers: [EspService],
+  providers: [EspService, EspGateway], // ← EspGateway DEBE estar aquí
 })
 export class EspModule {}
