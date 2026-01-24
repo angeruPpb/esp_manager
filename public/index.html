@@ -62,6 +62,16 @@
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
         }
+        .history-item {
+            background: #0d1117;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 3px solid #238636;
+        }
+        .history-success { border-left-color: #3fb950; }
+        .history-failed { border-left-color: #f85149; }
+   
     </style>
 </head>
 <body>
@@ -97,6 +107,11 @@
         <h3>📋 Firmwares Disponibles</h3>
         <button onclick="loadFirmwares()">🔄 Recargar</button>
         <div id="firmwareList"></div>
+    </div>
+     <div class="card">
+        <h3>📜 Historial de Actualizaciones</h3>
+        <button onclick="loadHistory()">🔄 Recargar</button>
+        <div id="historyList"></div>
     </div>
 
     <script>
@@ -306,12 +321,45 @@
             socket.emit('delete_firmware', { id });
         }
 
+        function loadHistory() {
+            socket.emit('get_update_history');
+        }
+
+        socket.on('update_history_list', (history) => {
+            const list = document.getElementById('historyList');
+            
+            if (history.length === 0) {
+                list.innerHTML = '<p style="color: #8b949e;">No hay actualizaciones registradas</p>';
+                return;
+            }
+
+            list.innerHTML = history.map(h => {
+                const statusClass = h.status === 'success' ? 'history-success' : 'history-failed';
+                const statusIcon = h.status === 'success' ? '✅' : '❌';
+                const timestamp = new Date(h.timestamp).toLocaleString();
+
+                return `
+                    <div class="history-item ${statusClass}">
+                        ${statusIcon} <strong>${h.deviceName}</strong> → v${h.version}<br>
+                        <small>Estado: ${h.status === 'success' ? 'Exitosa' : 'Fallida'}</small><br>
+                        ${h.error ? `<small style="color: #f85149;">Error: ${h.error}</small><br>` : ''}
+                        <small>Fecha: ${timestamp}</small>
+                    </div>
+                `;
+            }).join('');
+        });
+
         socket.on('device_updated', (data) => {
-            console.log('✅ Dispositivo actualizado:', data);
+            console.log(`✅ ${data.deviceName} se actualizó a v${data.version}`);
+            alert(`✅ ${data.deviceName} se actualizó exitosamente a v${data.version}`);
+            loadHistory();
         });
 
         // Auto-recargar cada 10 segundos (ahora usando WebSocket)
-        setInterval(loadDevices, 10000);
+        setInterval(() => {
+            loadDevices();
+            loadHistory();
+        }, 10000);
     </script>
 </body>
 </html>

@@ -26,10 +26,21 @@ export interface Device {
   lastUpdateDate?: string;
 }
 
+export interface UpdateHistory {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  version: string;
+  status: 'success' | 'failed';
+  error?: string;
+  timestamp: string;
+}
+
 @Injectable()
 export class EspService {
   private readonly dbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'db.json');
   private readonly devicesDbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'devices.json');
+  private readonly historyDbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'history.json');
   private readonly uploadsDir = join(__dirname, '..', '..', 'uploads', 'firmware');
 
   constructor() {
@@ -43,6 +54,10 @@ export class EspService {
 
     if (!existsSync(this.devicesDbPath)) {
       this.saveDevicesDb([]);
+    }
+
+    if (!existsSync(this.historyDbPath)) {
+      this.saveHistoryDb([]);
     }
   }
 
@@ -64,6 +79,15 @@ export class EspService {
     writeFileSync(this.devicesDbPath, JSON.stringify(data, null, 2));
   }
 
+  private getHistoryDb(): UpdateHistory[] {
+    const data = readFileSync(this.historyDbPath, 'utf-8');
+    return JSON.parse(data);
+  }
+
+  private saveHistoryDb(data: UpdateHistory[]): void {
+    writeFileSync(this.historyDbPath, JSON.stringify(data, null, 2));
+  }
+
   async registerDevice(name: string): Promise<{ device: Device; isNew: boolean }> {
     const devices = this.getDevicesDb();
     
@@ -78,7 +102,6 @@ export class EspService {
 
     const apiKey = this.generateApiKeyFromName(name);
 
-    // Genera un ID único simple
     const device: Device = {
       id: Date.now().toString(),
       name,
@@ -99,6 +122,11 @@ export class EspService {
 
   async getDevices(): Promise<Device[]> {
     return this.getDevicesDb();
+  }
+
+  getDeviceById(deviceId: string): Device | null {
+    const devices = this.getDevicesDb();
+    return devices.find(d => d.id === deviceId) || null;
   }
 
   async deleteDevice(id: string) {
@@ -124,16 +152,9 @@ export class EspService {
     const deviceIndex = devices.findIndex(d => d.apiKey === apiKey);
 
     if (deviceIndex !== -1) {
-      const previousVersion = devices[deviceIndex].currentVersion;
-      
       devices[deviceIndex].currentVersion = currentVersion;
       devices[deviceIndex].lastCheck = new Date().toISOString();
       devices[deviceIndex].ipAddress = ipAddress;
-      
-      if (previousVersion !== currentVersion && previousVersion !== '0.0.0') {
-        devices[deviceIndex].lastUpdateStatus = 'success';
-        devices[deviceIndex].lastUpdateDate = new Date().toISOString();
-      }
       
       this.saveDevicesDb(devices);
     }
@@ -207,7 +228,7 @@ export class EspService {
     return this.getDb();
   }
 
-  async getLatestFirmwareForDevice(deviceId: string): Promise<Firmware | null> {
+  async getPendingFirmwareForDevice(deviceId: string): Promise<Firmware | null> {
     const db = this.getDb();
     const deviceFirmwares = db.filter(f => f.deviceId === deviceId);
     
@@ -235,6 +256,43 @@ export class EspService {
     this.saveDb(newDb);
 
     return { success: true, message: 'Firmware eliminado' };
+  }
+
+  async deleteFirmwareByDeviceAndVersion(deviceId: string, version: string) {
+    const db = this.getDb();
+    const firmware = db.find(f => f.deviceId === deviceId && f.version === version);
+
+    if (firmware) {
+      const filePath = join(this.uploadsDir, firmware.filename);
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
+      }
+
+      const newDb = db.filter(f => f.id !== firmware.id);
+      this.saveDb(newDb);
+
+      console.log(`🗑️ Firmware v${version} eliminado después de actualización exitosa`);
+    }
+  }
+
+  async addUpdateHistory(data: Omit<UpdateHistory, 'id'>) {
+    const history = this.getHistoryDb();
+    
+    const entry: UpdateHistory = {
+      id: Date.now().toString(),
+      ...data,
+    };
+
+    history.push(entry);
+    this.saveHistoryDb(history);
+
+    return entry;
+  }
+
+  async getUpdateHistory(): Promise<UpdateHistory[]> {
+    return this.getHistoryDb().sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
   }
 
   private generateApiKeyFromName(name: string): string {
