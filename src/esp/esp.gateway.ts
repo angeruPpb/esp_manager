@@ -7,9 +7,10 @@ import {
     MessageBody,
     ConnectedSocket,
 } from '@nestjs/websockets';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { EspService, Device, Firmware } from './esp.service';
+import { MqttService } from '../mqtt/mqtt.service';
 
 @Injectable()
 @WebSocketGateway({
@@ -21,10 +22,13 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     server: Server;
     
-    // Guardar dispositivos conectados: Map<apiKey, Socket>
     private connectedDevices: Map<string, Socket> = new Map();
 
-    constructor(private readonly espService: EspService) { }
+    constructor(
+        private readonly espService: EspService, 
+        @Inject(forwardRef(() => MqttService))
+        private readonly mqttService: MqttService,
+    ) {}
 
     handleConnection(client: Socket) {
         console.log(`🔌 Cliente conectado: ${client.id}`);
@@ -33,7 +37,6 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
     handleDisconnect(client: Socket) {
         console.log(`❌ Cliente desconectado: ${client.id}`);
 
-        // Remover del Map si era un ESP32
         for (const [apiKey, socket] of this.connectedDevices.entries()) {
             if (socket.id === client.id) {
                 this.connectedDevices.delete(apiKey);
@@ -75,7 +78,7 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     @SubscribeMessage('get_firmwares')
     async handleGetFirmwares(@ConnectedSocket() client: Socket) {
-        const firmwares = await this.espService.getFirmwareList();
+        const firmwares = await this.espService.getFirmwares(); // ✅ Corregido: getFirmwares()
         client.emit('firmwares_list', firmwares);
         return firmwares;
     }
@@ -97,13 +100,67 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return history;
     }
 
+    // ✅ Método público para notificar nuevo firmware
     notifyFirmwareUploaded(firmware: Firmware) {
         this.server.emit('firmware_uploaded', firmware);
         this.broadcastFirmwareUpdate();
-        
-        // Notificar al dispositivo específico si está conectado
         this.notifyDeviceUpdate(firmware.deviceId);
     }
+
+    // ========== ENVIAR FIRMWARE MANUAL ==========
+
+@SubscribeMessage('send_firmware')
+async handleSendFirmware(
+  @MessageBody() data: { apiKey: string; firmwareId: string },
+  @ConnectedSocket() client: Socket,
+) {
+  try {
+    // ✅ Verificar que no se esté enviando ya una actualización a este dispositivo
+    const device = this.espService.validateDevice(data.apiKey);
+    
+    // Obtener firmware
+    const firmwares = await this.espService.getFirmwares();
+    const firmware = firmwares.find(f => f.id === data.firmwareId);
+
+    if (!firmware) {
+      client.emit('firmware_send_error', { error: 'Firmware no encontrado' });
+      return { success: false, error: 'Firmware no encontrado' };
+    }
+
+    // ✅ Construir URL del firmware
+    const protocol = client.handshake.headers['x-forwarded-proto'] || 'http';
+    const host = client.handshake.headers.host || 'localhost:3000';
+    const baseUrl = `${protocol}://${host}`;
+    const firmwareUrl = `${baseUrl}${firmware.url}`;
+
+    console.log(`📤 Enviando firmware v${firmware.version} a ${device.name}`);
+    console.log(`   URL: ${firmwareUrl}`);
+
+    // Enviar comando vía MQTT (esto retorna una promesa)
+    const result = await this.mqttService.sendUpdateCommand(data.apiKey, {
+      version: firmware.version,
+      url: firmwareUrl,
+      size: firmware.size,
+      description: firmware.description,
+    });
+
+    // ✅ Notificar al cliente que el comando fue enviado
+    client.emit('firmware_send_success', {
+      deviceName: device.name,
+      version: firmware.version,
+    });
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error enviando firmware:', error);
+    
+    client.emit('firmware_send_error', { 
+      error: error.message || 'Error desconocido' 
+    });
+    
+    return { success: false, error: error.message };
+  }
+}
 
     // ========== ESP32 ==========
 
@@ -115,10 +172,8 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
         try {
             const device = this.espService.validateDevice(data.apiKey);
 
-            // Guardar socket del ESP32
             this.connectedDevices.set(data.apiKey, client);
 
-            // Actualizar estado
             this.espService.updateDeviceStatus(
                 data.apiKey,
                 data.currentVersion,
@@ -141,51 +196,48 @@ export class EspGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     @SubscribeMessage('esp32_check_update')
-async handleEsp32CheckUpdate(
-    @MessageBody() data: { apiKey: string; currentVersion: string },
-    @ConnectedSocket() client: Socket,
-) {
-    try {
-        const device = this.espService.validateDevice(data.apiKey);
+    async handleEsp32CheckUpdate(
+        @MessageBody() data: { apiKey: string; currentVersion: string },
+        @ConnectedSocket() client: Socket,
+    ) {
+        try {
+            const device = this.espService.validateDevice(data.apiKey);
 
-        // ✅ LOG: Dispositivo consultando actualización
-        console.log(`🔍 ${device.name} (v${data.currentVersion}) consultando actualizaciones...`);
+            console.log(`🔍 ${device.name} (v${data.currentVersion}) consultando actualizaciones...`);
 
-        // Actualizar lastCheck
-        this.espService.updateDeviceStatus(
-            data.apiKey,
-            data.currentVersion,
-            client.handshake.address,
-        );
+            this.espService.updateDeviceStatus(
+                data.apiKey,
+                data.currentVersion,
+                client.handshake.address,
+            );
 
-        // Verificar si hay firmware pendiente para este dispositivo
-        const pendingFirmware = await this.espService.getPendingFirmwareForDevice(device.id);
+            const pendingFirmware = await this.espService.getPendingFirmwareForDevice(device.id);
 
-        if (pendingFirmware && this.compareVersions(pendingFirmware.version, data.currentVersion) > 0) {
-            const baseUrl = `http://${client.handshake.headers.host}`;
+            if (pendingFirmware && this.compareVersions(pendingFirmware.version, data.currentVersion) > 0) {
+                const protocol = client.handshake.headers['x-forwarded-proto'] || 'http';
+                const host = client.handshake.headers.host || 'localhost:3000';
+                const baseUrl = `${protocol}://${host}`;
 
-            client.emit('update_available', {
-                version: pendingFirmware.version,
-                url: `${baseUrl}${pendingFirmware.url}`,
-                size: pendingFirmware.size,
-                description: pendingFirmware.description,
-            });
+                client.emit('update_available', {
+                    version: pendingFirmware.version,
+                    url: `${baseUrl}${pendingFirmware.url}`,
+                    size: pendingFirmware.size,
+                    description: pendingFirmware.description,
+                });
 
-            console.log(`📤 Actualización enviada a ${device.name}: v${pendingFirmware.version}`);
+                console.log(`📤 Actualización enviada a ${device.name}: v${pendingFirmware.version}`);
 
-            return { updateAvailable: true, version: pendingFirmware.version };
+                return { updateAvailable: true, version: pendingFirmware.version };
+            }
+
+            console.log(`✅ ${device.name} está actualizado (v${data.currentVersion})`);
+
+            return { updateAvailable: false };
+        } catch (error) {
+            console.log(`❌ Dispositivo no autorizado intentó consultar actualizaciones`);
+            return { success: false };
         }
-
-        // ✅ LOG: No hay actualización disponible
-        console.log(`✅ ${device.name} está actualizado (v${data.currentVersion})`);
-
-        return { updateAvailable: false };
-    } catch (error) {
-        // ✅ LOG: Error de autenticación
-        console.log(`❌ Dispositivo no autorizado intentó consultar actualizaciones`);
-        return { success: false };
     }
-}
 
     @SubscribeMessage('update_status')
     async handleUpdateStatus(
@@ -203,7 +255,6 @@ async handleEsp32CheckUpdate(
             if (data.success) {
                 console.log(`✅ ${device.name} se actualizó exitosamente a v${data.version}`);
 
-                // Guardar en historial
                 await this.espService.addUpdateHistory({
                     deviceId: device.id,
                     deviceName: device.name,
@@ -212,13 +263,10 @@ async handleEsp32CheckUpdate(
                     timestamp: new Date().toISOString(),
                 });
 
-                // Actualizar versión del dispositivo
                 this.espService.confirmUpdateSuccess(data.apiKey, data.version);
 
-                // Eliminar el firmware del servidor
                 await this.espService.deleteFirmwareByDeviceAndVersion(device.id, data.version);
 
-                // Notificar a todos los clientes web
                 this.server.emit('device_updated', {
                     deviceId: device.id,
                     deviceName: device.name,
@@ -231,7 +279,6 @@ async handleEsp32CheckUpdate(
             } else {
                 console.log(`❌ ${device.name} falló al actualizar: ${data.error}`);
 
-                // Guardar en historial como fallido
                 await this.espService.addUpdateHistory({
                     deviceId: device.id,
                     deviceName: device.name,
@@ -261,14 +308,14 @@ async handleEsp32CheckUpdate(
         }
     }
 
-    private broadcastDeviceStatus() {
+    public broadcastDeviceStatus() {
         this.espService.getDevices().then((devices) => {
             this.server.emit('devices_update', devices);
         });
     }
 
-    private broadcastFirmwareUpdate() {
-        this.espService.getFirmwareList().then((firmwares) => {
+    public broadcastFirmwareUpdate() {
+        this.espService.getFirmwares().then((firmwares) => { // ✅ Corregido
             this.server.emit('firmwares_update', firmwares);
         });
     }

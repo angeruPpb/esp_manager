@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import * as crypto from 'crypto';
 
@@ -38,55 +38,74 @@ export interface UpdateHistory {
 
 @Injectable()
 export class EspService {
-  private readonly dbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'db.json');
-  private readonly devicesDbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'devices.json');
-  private readonly historyDbPath = join(__dirname, '..', '..', 'uploads', 'firmware', 'history.json');
-  private readonly uploadsDir = join(__dirname, '..', '..', 'uploads', 'firmware');
+  // ✅ Rutas corregidas
+  private readonly devicesFile = join(process.cwd(), 'data', 'devices.json');
+  private readonly firmwareFile = join(process.cwd(), 'data', 'firmware.json');
+  private readonly historyFile = join(process.cwd(), 'data', 'history.json');
+  private readonly uploadDir = join(process.cwd(), 'public', 'uploads');
 
   constructor() {
-    if (!existsSync(this.uploadsDir)) {
-      mkdirSync(this.uploadsDir, { recursive: true });
+    // Asegurar que existan las carpetas necesarias
+    const dataDir = join(process.cwd(), 'data');
+    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    const firmwareDir = join(uploadsDir, 'firmware');
+
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
     }
 
-    if (!existsSync(this.dbPath)) {
-      this.saveDb([]);
+    if (!existsSync(uploadsDir)) {
+      mkdirSync(uploadsDir, { recursive: true });
     }
 
-    if (!existsSync(this.devicesDbPath)) {
-      this.saveDevicesDb([]);
+    if (!existsSync(firmwareDir)) {
+      mkdirSync(firmwareDir, { recursive: true });
     }
 
-    if (!existsSync(this.historyDbPath)) {
-      this.saveHistoryDb([]);
+    // Crear archivos JSON si no existen
+    if (!existsSync(this.devicesFile)) {
+      writeFileSync(this.devicesFile, JSON.stringify([], null, 2));
+    }
+
+    if (!existsSync(this.firmwareFile)) {
+      writeFileSync(this.firmwareFile, JSON.stringify([], null, 2));
+    }
+
+    if (!existsSync(this.historyFile)) {
+      writeFileSync(this.historyFile, JSON.stringify([], null, 2));
     }
   }
 
-  private getDb(): Firmware[] {
-    const data = readFileSync(this.dbPath, 'utf-8');
+  // ========== MÉTODOS PRIVADOS DE BASE DE DATOS ==========
+
+  private getFirmwareList(): Firmware[] {
+    const data = readFileSync(this.firmwareFile, 'utf-8');
     return JSON.parse(data);
   }
 
-  private saveDb(data: Firmware[]): void {
-    writeFileSync(this.dbPath, JSON.stringify(data, null, 2));
+  private saveFirmwareList(data: Firmware[]): void {
+    writeFileSync(this.firmwareFile, JSON.stringify(data, null, 2));
   }
 
   private getDevicesDb(): Device[] {
-    const data = readFileSync(this.devicesDbPath, 'utf-8');
+    const data = readFileSync(this.devicesFile, 'utf-8');
     return JSON.parse(data);
   }
 
   private saveDevicesDb(data: Device[]): void {
-    writeFileSync(this.devicesDbPath, JSON.stringify(data, null, 2));
+    writeFileSync(this.devicesFile, JSON.stringify(data, null, 2));
   }
 
   private getHistoryDb(): UpdateHistory[] {
-    const data = readFileSync(this.historyDbPath, 'utf-8');
+    const data = readFileSync(this.historyFile, 'utf-8');
     return JSON.parse(data);
   }
 
   private saveHistoryDb(data: UpdateHistory[]): void {
-    writeFileSync(this.historyDbPath, JSON.stringify(data, null, 2));
+    writeFileSync(this.historyFile, JSON.stringify(data, null, 2));
   }
+
+  // ========== DISPOSITIVOS ==========
 
   async registerDevice(name: string): Promise<{ device: Device; isNew: boolean }> {
     const devices = this.getDevicesDb();
@@ -154,7 +173,10 @@ export class EspService {
     if (deviceIndex !== -1) {
       devices[deviceIndex].currentVersion = currentVersion;
       devices[deviceIndex].lastCheck = new Date().toISOString();
-      devices[deviceIndex].ipAddress = ipAddress;
+      
+      if (ipAddress) {
+        devices[deviceIndex].ipAddress = ipAddress;
+      }
       
       this.saveDevicesDb(devices);
     }
@@ -193,89 +215,133 @@ export class EspService {
     }
   }
 
+  // ✅ NUEVO: Marcar dispositivo como actualizado (sin firmware pendiente)
+  markDeviceUpToDate(deviceId: string) {
+    const devices = this.getDevicesDb();
+    const deviceIndex = devices.findIndex(d => d.id === deviceId);
+
+    if (deviceIndex !== -1) {
+      devices[deviceIndex].lastUpdateStatus = 'none';
+      this.saveDevicesDb(devices);
+      console.log(`✅ Dispositivo ${devices[deviceIndex].name} marcado como actualizado (sin firmware pendiente)`);
+    }
+  }
+
+  // ========== FIRMWARE ==========
+
   async saveFirmware(
     file: Express.Multer.File, 
     metadata: { version: string; description: string; deviceId: string }
-  ) {
-    const db = this.getDb();
-    
-    const newFilename = `esp32_v${metadata.version}_${metadata.deviceId}.bin`;
-    const oldPath = join(this.uploadsDir, file.filename);
-    const newPath = join(this.uploadsDir, newFilename);
-    
-    renameSync(oldPath, newPath);
-    
+  ): Promise<{ success: boolean; firmware: Firmware }> {
+    const firmwares = this.getFirmwareList();
+
+    // ✅ Directorio de firmware
+    const firmwareDir = join(this.uploadDir, 'firmware');
+
+    // Asegurar que el directorio existe
+    if (!existsSync(firmwareDir)) {
+      mkdirSync(firmwareDir, { recursive: true });
+    }
+
+    // Generar nombre único para el archivo
+    const timestamp = Date.now();
+    const filename = `${metadata.deviceId}_v${metadata.version}_${timestamp}.bin`;
+    const filepath = join(firmwareDir, filename);
+
+    // Guardar archivo
+    writeFileSync(filepath, file.buffer);
+
     const firmware: Firmware = {
-      id: Date.now().toString(),
-      version: metadata.version,
-      description: metadata.description,
-      filename: newFilename,
-      url: `/uploads/firmware/${newFilename}`,
-      uploadDate: new Date().toISOString(),
-      size: file.size,
+      id: timestamp.toString(),
       deviceId: metadata.deviceId,
+      version: metadata.version,
+      filename,
+      url: `/uploads/firmware/${filename}`,
+      size: file.size,
+      description: metadata.description,
+      uploadDate: new Date().toISOString(),
     };
 
-    db.push(firmware);
-    this.saveDb(db);
+    firmwares.push(firmware);
+    this.saveFirmwareList(firmwares);
 
+    // Marcar dispositivo como pendiente de actualización
     this.markUpdatePending(metadata.deviceId);
+
+    console.log(`✅ Firmware guardado: ${filename} para dispositivo ${metadata.deviceId}`);
 
     return { success: true, firmware };
   }
 
-  async getFirmwareList() {
-    return this.getDb();
+  async getFirmwares(): Promise<Firmware[]> {
+    return this.getFirmwareList();
   }
 
   async getPendingFirmwareForDevice(deviceId: string): Promise<Firmware | null> {
-    const db = this.getDb();
-    const deviceFirmwares = db.filter(f => f.deviceId === deviceId);
+    const firmwares = this.getFirmwareList();
+    const deviceFirmwares = firmwares.filter(f => f.deviceId === deviceId);
     
     if (deviceFirmwares.length === 0) return null;
 
+    // Retornar el firmware más reciente
     return deviceFirmwares.sort((a, b) => 
       new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
     )[0];
   }
 
   async deleteFirmware(id: string) {
-    const db = this.getDb();
-    const firmware = db.find(f => f.id === id);
+    const firmwares = this.getFirmwareList();
+    const firmware = firmwares.find(f => f.id === id);
 
     if (!firmware) {
       return { success: false, message: 'Firmware no encontrado' };
     }
 
-    const filePath = join(this.uploadsDir, firmware.filename);
+    // ✅ Verificar si hay más firmwares pendientes para este dispositivo
+    const deviceFirmwares = firmwares.filter(
+      f => f.deviceId === firmware.deviceId && f.id !== firmware.id
+    );
+
+    // ✅ Si no hay más firmwares pendientes, marcar dispositivo como actualizado
+    if (deviceFirmwares.length === 0) {
+      this.markDeviceUpToDate(firmware.deviceId);
+    }
+
+    // Eliminar archivo físico
+    const filePath = join(this.uploadDir, 'firmware', firmware.filename);
     if (existsSync(filePath)) {
       unlinkSync(filePath);
     }
 
-    const newDb = db.filter(f => f.id !== id);
-    this.saveDb(newDb);
+    // Eliminar de la base de datos
+    const newFirmwares = firmwares.filter(f => f.id !== id);
+    this.saveFirmwareList(newFirmwares);
+
+    console.log(`🗑️ Firmware eliminado: ${firmware.filename}`);
 
     return { success: true, message: 'Firmware eliminado' };
   }
 
   async deleteFirmwareByDeviceAndVersion(deviceId: string, version: string) {
-    const db = this.getDb();
-    const firmware = db.find(f => f.deviceId === deviceId && f.version === version);
+    const firmwares = this.getFirmwareList();
+    const firmware = firmwares.find(f => f.deviceId === deviceId && f.version === version);
 
     if (firmware) {
-      const filePath = join(this.uploadsDir, firmware.filename);
+      const filePath = join(this.uploadDir, 'firmware', firmware.filename);
       if (existsSync(filePath)) {
         unlinkSync(filePath);
       }
 
-      const newDb = db.filter(f => f.id !== firmware.id);
-      this.saveDb(newDb);
+      const newFirmwares = firmwares.filter(f => f.id !== firmware.id);
+      this.saveFirmwareList(newFirmwares);
 
       console.log(`🗑️ Firmware v${version} eliminado después de actualización exitosa`);
     }
   }
 
-  async addUpdateHistory(data: Omit<UpdateHistory, 'id'>) {
+  // ========== HISTORIAL ==========
+
+  async addUpdateHistory(data: Omit<UpdateHistory, 'id'>): Promise<UpdateHistory> {
     const history = this.getHistoryDb();
     
     const entry: UpdateHistory = {
@@ -294,6 +360,8 @@ export class EspService {
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   }
+
+  // ========== UTILIDADES ==========
 
   private generateApiKeyFromName(name: string): string {
     const hash = crypto

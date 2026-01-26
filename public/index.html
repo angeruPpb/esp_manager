@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>ESP32 OTA Manager</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { 
-            font-family: monospace; 
-            max-width: 1000px; 
+        body {
+            font-family: monospace;
+            max-width: 1000px;
             margin: 50px auto;
             background: #0d1117;
             color: #c9d1d9;
             padding: 20px;
         }
+
         .card {
             background: #161b22;
             border: 1px solid #30363d;
@@ -19,7 +21,10 @@
             padding: 20px;
             margin: 20px 0;
         }
-        input, button, select {
+
+        input,
+        button,
+        select {
             padding: 10px;
             margin: 5px;
             border-radius: 6px;
@@ -27,41 +32,83 @@
             background: #0d1117;
             color: #c9d1d9;
         }
+
         select {
             width: 100%;
             max-width: 400px;
         }
+
         button {
             background: #238636;
             border-color: #238636;
             cursor: pointer;
         }
-        button:hover { background: #2ea043; }
-        button.delete { background: #da3633; border-color: #da3633; }
-        button.delete:hover { background: #f85149; }
-        .firmware-item, .device-item {
+
+        button:hover {
+            background: #2ea043;
+        }
+
+        button.delete {
+            background: #da3633;
+            border-color: #da3633;
+        }
+
+        button.delete:hover {
+            background: #f85149;
+        }
+
+        button.send {
+            background: #1f6feb;
+            border-color: #1f6feb;
+        }
+
+        button.send:hover {
+            background: #388bfd;
+        }
+
+        button:disabled {
+            background: #21262d;
+            border-color: #30363d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .firmware-item,
+        .device-item {
             background: #0d1117;
             padding: 10px;
             margin: 5px 0;
             border-radius: 4px;
             border-left: 3px solid #238636;
         }
-        .online { border-left-color: #3fb950; }
-        .offline { border-left-color: #f85149; }
+
+        .online {
+            border-left-color: #3fb950;
+        }
+
+        .offline {
+            border-left-color: #f85149;
+        }
+
         code {
             background: #0d1117;
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 12px;
         }
+
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
+
         @media (max-width: 768px) {
-            .grid { grid-template-columns: 1fr; }
+            .grid {
+                grid-template-columns: 1fr;
+            }
         }
+
         .history-item {
             background: #0d1117;
             padding: 10px;
@@ -69,14 +116,44 @@
             border-radius: 4px;
             border-left: 3px solid #238636;
         }
-        .history-success { border-left-color: #3fb950; }
-        .history-failed { border-left-color: #f85149; }
-   
+
+        .history-success {
+            border-left-color: #3fb950;
+        }
+
+        .history-failed {
+            border-left-color: #f85149;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .status-pending {
+            background: #d29922;
+            color: #000;
+        }
+
+        .status-downloading {
+            background: #1f6feb;
+            color: #fff;
+        }
+
+        .status-installing {
+            background: #a371f7;
+            color: #fff;
+        }
     </style>
 </head>
+
 <body>
     <h1>🔧 ESP32 OTA Manager</h1>
-    
+
     <div class="grid">
         <div class="card">
             <h3>📱 Registrar Dispositivo</h3>
@@ -108,7 +185,8 @@
         <button onclick="loadFirmwares()">🔄 Recargar</button>
         <div id="firmwareList"></div>
     </div>
-     <div class="card">
+
+    <div class="card">
         <h3>📜 Historial de Actualizaciones</h3>
         <button onclick="loadHistory()">🔄 Recargar</button>
         <div id="historyList"></div>
@@ -117,12 +195,15 @@
     <script>
         const socket = io();
         let devicesCache = [];
+        let firmwaresCache = [];
+        let pendingUpdates = new Map(); // Tracking de actualizaciones en progreso
 
         // ============ CONEXIÓN WEBSOCKET ============
         socket.on('connect', () => {
             console.log('✅ Conectado al servidor WebSocket');
             loadDevices();
             loadFirmwares();
+            loadHistory();
         });
 
         socket.on('disconnect', () => {
@@ -142,7 +223,7 @@
 
         socket.on('device_registered', (data) => {
             const resultDiv = document.getElementById('apiKeyResult');
-            
+
             if (data.isNew) {
                 resultDiv.innerHTML = `
                     <div style="background: #238636; padding: 15px; border-radius: 6px; margin-top: 10px;">
@@ -162,7 +243,7 @@
                     </div>
                 `;
             }
-            
+
             document.getElementById('deviceName').value = '';
         });
 
@@ -206,7 +287,7 @@
                         'failed': '#f85149',
                         'pending': '#d29922'
                     };
-                    
+
                     updateStatusHTML = `
                         <small style="color: ${statusColors[d.lastUpdateStatus]}">
                             ${statusIcons[d.lastUpdateStatus]}
@@ -273,7 +354,7 @@
 
             const data = await res.json();
             alert(`✅ Firmware subido: ${data.firmware.filename}\nURL: ${data.firmware.url}`);
-            
+
             document.getElementById('firmwareFile').value = '';
             document.getElementById('version').value = '';
             document.getElementById('description').value = '';
@@ -297,19 +378,95 @@
             loadFirmwares();
         });
 
+        // ✅ NUEVO: Función para enviar firmware al dispositivo
+        async function sendFirmwareToDevice(firmwareId) {
+            const firmware = firmwaresCache.find(f => f.id === firmwareId);
+            const device = devicesCache.find(d => d.id === firmware.deviceId);
+
+            if (!device) {
+                alert('❌ Dispositivo no encontrado');
+                return;
+            }
+
+            // Verificar si el dispositivo está online
+            const lastCheck = new Date(device.lastCheck);
+            const diffSeconds = (new Date() - lastCheck) / 1000;
+            const isOnline = diffSeconds < 60;
+
+            if (!isOnline) {
+                if (!confirm(`⚠️ ${device.name} está OFFLINE. ¿Enviar de todas formas?`)) {
+                    return;
+                }
+            }
+
+            if (!confirm(`¿Enviar firmware v${firmware.version} a ${device.name}?`)) {
+                return;
+            }
+
+            const sendButton = document.querySelector(`button[data-firmware-id="${firmwareId}"]`);
+
+            // ✅ Deshabilitar botón ANTES de enviar
+            if (sendButton) {
+                sendButton.disabled = true;
+                sendButton.textContent = '⏳ Enviando...';
+            }
+
+            pendingUpdates.set(device.apiKey, {
+                firmwareId,
+                version: firmware.version,
+                deviceName: device.name,
+                startTime: Date.now()
+            });
+
+            // ✅ Emitir evento UNA SOLA VEZ
+            socket.emit('send_firmware', {
+                apiKey: device.apiKey,
+                firmwareId: firmware.id
+            });
+        }
+        // ✅ Escuchar confirmación de envío exitoso
+        socket.on('firmware_send_success', (data) => {
+            console.log(`✅ Firmware v${data.version} enviado a ${data.deviceName}`);
+        });
+
+        // ✅ Escuchar error de envío
+        socket.on('firmware_send_error', (data) => {
+            console.error(`❌ Error enviando firmware: ${data.error}`);
+            alert(`❌ Error enviando firmware: ${data.error}`);
+
+            // Rehabilitar botón en caso de error
+            loadFirmwares();
+        });
         function updateFirmwaresList(firmwares) {
+            firmwaresCache = firmwares;
             const list = document.getElementById('firmwareList');
+
             list.innerHTML = firmwares.map(f => {
                 const device = devicesCache.find(d => d.id === f.deviceId);
                 const deviceName = device ? device.name : 'Desconocido';
+                const isDeviceOnline = device && ((new Date() - new Date(device.lastCheck)) / 1000) < 60;
+
+                const isPending = device && pendingUpdates.has(device.apiKey);
 
                 return `
                     <div class="firmware-item">
-                        <strong>v${f.version}</strong> - ${f.description}<br>
-                        <small>🎯 Dispositivo: <strong>${deviceName}</strong> (ID: ${f.deviceId})</small><br>
-                        <small>Archivo: ${f.filename} (${(f.size/1024).toFixed(2)} KB)</small><br>
+                        <strong>v${f.version}</strong> - ${f.description}
+                        ${isPending ? '<span class="status-badge status-pending">⏳ Enviando...</span>' : ''}
+                        <br>
+                        <small>🎯 Dispositivo: <strong>${deviceName}</strong> 
+                            ${isDeviceOnline ? '🟢' : '🔴'}
+                            (ID: ${f.deviceId})
+                        </small><br>
+                        <small>Archivo: ${f.filename} (${(f.size / 1024).toFixed(2)} KB)</small><br>
                         <small>Subido: ${new Date(f.uploadDate).toLocaleString()}</small><br>
                         <small>URL: <code>${f.url}</code></small><br>
+                        <button 
+                            class="send" 
+                            data-firmware-id="${f.id}"
+                            onclick="sendFirmwareToDevice('${f.id}')"
+                            ${isPending ? 'disabled' : ''}>
+                            📤 Enviar a ${deviceName}
+                        </button>
                         <button class="delete" onclick="deleteFirmware('${f.id}')">🗑️ Eliminar</button>
                     </div>
                 `;
@@ -321,13 +478,14 @@
             socket.emit('delete_firmware', { id });
         }
 
+        // ============ HISTORIAL ============
         function loadHistory() {
             socket.emit('get_update_history');
         }
 
         socket.on('update_history_list', (history) => {
             const list = document.getElementById('historyList');
-            
+
             if (history.length === 0) {
                 list.innerHTML = '<p style="color: #8b949e;">No hay actualizaciones registradas</p>';
                 return;
@@ -349,17 +507,77 @@
             }).join('');
         });
 
+        // ============ EVENTOS DE ACTUALIZACIÓN ============
+
+        // Descarga completada
+        socket.on('download_complete', (data) => {
+            console.log(`✅ ${data.deviceName} completó descarga de v${data.version}`);
+
+            const device = devicesCache.find(d => d.id === data.deviceId);
+            if (device && pendingUpdates.has(device.apiKey)) {
+                const update = pendingUpdates.get(device.apiKey);
+                const sendButton = document.querySelector(`button[data-firmware-id="${update.firmwareId}"]`);
+                if (sendButton) {
+                    sendButton.textContent = '🔄 Instalando...';
+                }
+            }
+        });
+
+        // Descarga fallida
+        socket.on('download_failed', (data) => {
+            console.log(`❌ ${data.deviceName} falló descarga: ${data.error}`);
+            alert(`❌ ${data.deviceName} falló al descargar:\n${data.error}`);
+
+            const device = devicesCache.find(d => d.id === data.deviceId);
+            if (device && pendingUpdates.has(device.apiKey)) {
+                const update = pendingUpdates.get(device.apiKey);
+                pendingUpdates.delete(device.apiKey);
+
+                const sendButton = document.querySelector(`button[data-firmware-id="${update.firmwareId}"]`);
+                if (sendButton) {
+                    sendButton.disabled = false;
+                    sendButton.textContent = `📤 Enviar a ${device.name}`;
+                }
+            }
+
+            loadHistory();
+            loadFirmwares();
+        });
+
+        // Timeout de actualización
+        socket.on('update_timeout', (data) => {
+            console.log(`⏱️ ${data.deviceName} timeout`);
+            alert(`⏱️ ${data.deviceName} no respondió en 60 segundos`);
+
+            const device = devicesCache.find(d => d.id === data.deviceId);
+            if (device && pendingUpdates.has(device.apiKey)) {
+                pendingUpdates.delete(device.apiKey);
+            }
+
+            loadHistory();
+            loadFirmwares();
+        });
+
+        // Actualización exitosa
         socket.on('device_updated', (data) => {
             console.log(`✅ ${data.deviceName} se actualizó a v${data.version}`);
             alert(`✅ ${data.deviceName} se actualizó exitosamente a v${data.version}`);
+
+            const device = devicesCache.find(d => d.id === data.deviceId);
+            if (device && pendingUpdates.has(device.apiKey)) {
+                pendingUpdates.delete(device.apiKey);
+            }
+
             loadHistory();
+            loadFirmwares();
+            loadDevices();
         });
 
-        // Auto-recargar cada 10 segundos (ahora usando WebSocket)
+        // Auto-recargar cada 10 segundos
         setInterval(() => {
             loadDevices();
-            loadHistory();
         }, 10000);
     </script>
 </body>
+
 </html>
