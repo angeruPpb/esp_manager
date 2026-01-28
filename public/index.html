@@ -196,7 +196,8 @@
         const socket = io();
         let devicesCache = [];
         let firmwaresCache = [];
-        let pendingUpdates = new Map(); // Tracking de actualizaciones en progreso
+        let pendingUpdates = new Map();
+        let sendingFirmwares = new Set(); // ✅ NUEVO: Prevenir envíos duplicados
 
         // ============ CONEXIÓN WEBSOCKET ============
         socket.on('connect', () => {
@@ -251,10 +252,6 @@
             socket.emit('get_devices');
         }
 
-        socket.on('devices_list', (devices) => {
-            updateDevicesList(devices);
-        });
-
         socket.on('devices_update', (devices) => {
             updateDevicesList(devices);
         });
@@ -263,8 +260,17 @@
             devicesCache = devices;
 
             const select = document.getElementById('deviceSelect');
+
+            // ✅ GUARDAR valor seleccionado ANTES de actualizar
+            const currentSelection = select.value;
+
             select.innerHTML = '<option value="">Seleccione un dispositivo...</option>' +
                 devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+
+            // ✅ RESTAURAR selección después de actualizar
+            if (currentSelection) {
+                select.value = currentSelection;
+            }
 
             const list = document.getElementById('devicesList');
             const now = new Date();
@@ -289,28 +295,28 @@
                     };
 
                     updateStatusHTML = `
-                        <small style="color: ${statusColors[d.lastUpdateStatus]}">
-                            ${statusIcons[d.lastUpdateStatus]}
-                            ${d.lastUpdateDate ? `(${new Date(d.lastUpdateDate).toLocaleString()})` : ''}
-                        </small><br>
-                    `;
+                <small style="color: ${statusColors[d.lastUpdateStatus]}">
+                    ${statusIcons[d.lastUpdateStatus]}
+                    ${d.lastUpdateDate ? `(${new Date(d.lastUpdateDate).toLocaleString()})` : ''}
+                </small><br>
+            `;
                 }
 
                 return `
-                    <div class="device-item ${status}">
-                        <strong>${d.name}</strong> 
-                        <span style="color: ${isOnline ? '#3fb950' : '#f85149'}">
-                            ${isOnline ? '🟢 Online' : '🔴 Offline'}
-                        </span><br>
-                        <small>ID: <code>${d.id}</code></small><br>
-                        <small>Versión actual: <code>${d.currentVersion}</code></small><br>
-                        ${updateStatusHTML}
-                        <small>Última consulta: ${lastCheck.toLocaleString()}</small><br>
-                        <small>IP: ${d.ipAddress || 'N/A'}</small><br>
-                        <small>API Key: <code>${d.apiKey}</code></small><br>
-                        <button class="delete" onclick="deleteDevice('${d.id}')">🗑️ Eliminar</button>
-                    </div>
-                `;
+            <div class="device-item ${status}">
+                <strong>${d.name}</strong> 
+                <span style="color: ${isOnline ? '#3fb950' : '#f85149'}">
+                    ${isOnline ? '🟢 Online' : '🔴 Offline'}
+                </span><br>
+                <small>ID: <code>${d.id}</code></small><br>
+                <small>Versión actual: <code>${d.currentVersion}</code></small><br>
+                ${updateStatusHTML}
+                <small>Última consulta: ${lastCheck.toLocaleString()}</small><br>
+                <small>IP: ${d.ipAddress || 'N/A'}</small><br>
+                <small>API Key: <code>${d.apiKey}</code></small><br>
+                <button class="delete" onclick="deleteDevice('${d.id}')">🗑️ Eliminar</button>
+            </div>
+        `;
             }).join('');
         }
 
@@ -365,10 +371,6 @@
             socket.emit('get_firmwares');
         }
 
-        socket.on('firmwares_list', (firmwares) => {
-            updateFirmwaresList(firmwares);
-        });
-
         socket.on('firmwares_update', (firmwares) => {
             updateFirmwaresList(firmwares);
         });
@@ -378,8 +380,14 @@
             loadFirmwares();
         });
 
-        // ✅ NUEVO: Función para enviar firmware al dispositivo
+        // ✅ FUNCIÓN CORREGIDA: Prevenir envíos duplicados
         async function sendFirmwareToDevice(firmwareId) {
+            // ✅ Verificar si ya se está enviando
+            if (sendingFirmwares.has(firmwareId)) {
+                console.log('⚠️ Ya se está enviando este firmware, ignorando clic duplicado');
+                return;
+            }
+
             const firmware = firmwaresCache.find(f => f.id === firmwareId);
             const device = devicesCache.find(d => d.id === firmware.deviceId);
 
@@ -403,9 +411,12 @@
                 return;
             }
 
+            // ✅ Marcar como enviando INMEDIATAMENTE
+            sendingFirmwares.add(firmwareId);
+
             const sendButton = document.querySelector(`button[data-firmware-id="${firmwareId}"]`);
 
-            // ✅ Deshabilitar botón ANTES de enviar
+            // ✅ Deshabilitar botón
             if (sendButton) {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳ Enviando...';
@@ -418,12 +429,13 @@
                 startTime: Date.now()
             });
 
-            // ✅ Emitir evento UNA SOLA VEZ
+            // ✅ Emitir evento
             socket.emit('send_firmware', {
                 apiKey: device.apiKey,
                 firmwareId: firmware.id
             });
         }
+
         // ✅ Escuchar confirmación de envío exitoso
         socket.on('firmware_send_success', (data) => {
             console.log(`✅ Firmware v${data.version} enviado a ${data.deviceName}`);
@@ -434,9 +446,13 @@
             console.error(`❌ Error enviando firmware: ${data.error}`);
             alert(`❌ Error enviando firmware: ${data.error}`);
 
+            // ✅ Remover de la lista de envíos en progreso
+            sendingFirmwares.clear();
+
             // Rehabilitar botón en caso de error
             loadFirmwares();
         });
+
         function updateFirmwaresList(firmwares) {
             firmwaresCache = firmwares;
             const list = document.getElementById('firmwareList');
@@ -447,11 +463,12 @@
                 const isDeviceOnline = device && ((new Date() - new Date(device.lastCheck)) / 1000) < 60;
 
                 const isPending = device && pendingUpdates.has(device.apiKey);
+                const isSending = sendingFirmwares.has(f.id);
 
                 return `
                     <div class="firmware-item">
                         <strong>v${f.version}</strong> - ${f.description}
-                        ${isPending ? '<span class="status-badge status-pending">⏳ Enviando...</span>' : ''}
+                        ${isPending || isSending ? '<span class="status-badge status-pending">⏳ Enviando...</span>' : ''}
                         <br>
                         <small>🎯 Dispositivo: <strong>${deviceName}</strong> 
                             ${isDeviceOnline ? '🟢' : '🔴'}
@@ -464,7 +481,7 @@
                             class="send" 
                             data-firmware-id="${f.id}"
                             onclick="sendFirmwareToDevice('${f.id}')"
-                            ${isPending ? 'disabled' : ''}>
+                            ${isPending || isSending ? 'disabled' : ''}>
                             📤 Enviar a ${deviceName}
                         </button>
                         <button class="delete" onclick="deleteFirmware('${f.id}')">🗑️ Eliminar</button>
@@ -520,6 +537,9 @@
                 if (sendButton) {
                     sendButton.textContent = '🔄 Instalando...';
                 }
+
+                // ✅ Remover de lista de envíos
+                sendingFirmwares.delete(update.firmwareId);
             }
         });
 
@@ -532,6 +552,9 @@
             if (device && pendingUpdates.has(device.apiKey)) {
                 const update = pendingUpdates.get(device.apiKey);
                 pendingUpdates.delete(device.apiKey);
+
+                // ✅ Remover de lista de envíos
+                sendingFirmwares.delete(update.firmwareId);
 
                 const sendButton = document.querySelector(`button[data-firmware-id="${update.firmwareId}"]`);
                 if (sendButton) {
@@ -551,7 +574,11 @@
 
             const device = devicesCache.find(d => d.id === data.deviceId);
             if (device && pendingUpdates.has(device.apiKey)) {
+                const update = pendingUpdates.get(device.apiKey);
                 pendingUpdates.delete(device.apiKey);
+
+                // ✅ Remover de lista de envíos
+                sendingFirmwares.delete(update.firmwareId);
             }
 
             loadHistory();
@@ -565,7 +592,11 @@
 
             const device = devicesCache.find(d => d.id === data.deviceId);
             if (device && pendingUpdates.has(device.apiKey)) {
+                const update = pendingUpdates.get(device.apiKey);
                 pendingUpdates.delete(device.apiKey);
+
+                // ✅ Remover de lista de envíos
+                sendingFirmwares.delete(update.firmwareId);
             }
 
             loadHistory();

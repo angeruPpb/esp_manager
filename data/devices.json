@@ -1,13 +1,24 @@
 [
   {
-    "id": "1769401797704",
+    "id": "1769460053904",
+    "name": "test",
+    "apiKey": "esp32_9f86d081884c7d659a2feaa0c55ad015",
+    "currentVersion": "0.0.0",
+    "lastCheck": "2026-01-26T20:40:53.904Z",
+    "ipAddress": "",
+    "registered": "2026-01-26T20:40:53.904Z",
+    "lastUpdateStatus": "none",
+    "lastUpdateDate": ""
+  },
+  {
+    "id": "1769465640587",
     "name": "cole",
     "apiKey": "esp32_f78b6cb9224209fe21027f4f6addf57e",
-    "currentVersion": "1.0.16",
-    "lastCheck": "2026-01-26T04:45:02.015Z",
-    "ipAddress": "192.168.1.64",
-    "registered": "2026-01-26T04:29:57.704Z",
-    "lastUpdateStatus": "none",
-    "lastUpdateDate": "2026-01-26T04:39:12.477Z"
+    "currentVersion": "1.0.21",
+    "lastCheck": "2026-01-28T22:54:19.766Z",
+    "ipAddress": "192.168.1.120",
+    "registered": "2026-01-26T22:14:00.587Z",
+    "lastUpdateStatus": "success",
+    "lastUpdateDate": "2026-01-27T00:29:11.629Z"
   }
 ]

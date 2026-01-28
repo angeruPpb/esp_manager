@@ -73,5 +73,170 @@
     "status": "failed",
     "error": "Timeout: No response from device (60s)",
     "timestamp": "2026-01-26T04:44:38.396Z"
+  },
+  {
+    "id": "1769455741262",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.17",
+    "status": "failed",
+    "error": "Timeout: No response from device (60s)",
+    "timestamp": "2026-01-26T19:29:01.262Z"
+  },
+  {
+    "id": "1769456021894",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.17",
+    "status": "failed",
+    "error": "Timeout: No response from device (60s)",
+    "timestamp": "2026-01-26T19:33:41.894Z"
+  },
+  {
+    "id": "1769456021897",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.17",
+    "status": "failed",
+    "error": "Timeout: No response from device (60s)",
+    "timestamp": "2026-01-26T19:33:41.895Z"
+  },
+  {
+    "id": "1769456228317",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.17",
+    "status": "failed",
+    "error": "Timeout: No response from device (60s)",
+    "timestamp": "2026-01-26T19:37:08.317Z"
+  },
+  {
+    "id": "1769456515764",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:41:55.763Z"
+  },
+  {
+    "id": "1769456775157",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:46:15.157Z"
+  },
+  {
+    "id": "1769456780669",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:46:20.669Z"
+  },
+  {
+    "id": "1769456787973",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:46:27.972Z"
+  },
+  {
+    "id": "1769457178643",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:52:58.643Z"
+  },
+  {
+    "id": "1769457188077",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.18",
+    "status": "success",
+    "timestamp": "2026-01-26T19:53:08.076Z"
+  },
+  {
+    "id": "1769457389892",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.19",
+    "status": "success",
+    "timestamp": "2026-01-26T19:56:29.892Z"
+  },
+  {
+    "id": "1769460371209",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.19",
+    "status": "success",
+    "timestamp": "2026-01-26T20:46:11.209Z"
+  },
+  {
+    "id": "1769460372542",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.19",
+    "status": "success",
+    "timestamp": "2026-01-26T20:46:12.542Z"
+  },
+  {
+    "id": "1769460373306",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.19",
+    "status": "success",
+    "timestamp": "2026-01-26T20:46:13.306Z"
+  },
+  {
+    "id": "1769465227332",
+    "deviceId": "1769401797704",
+    "deviceName": "cole",
+    "version": "1.0.20",
+    "status": "failed",
+    "error": "Timeout: No response from device (60s)",
+    "timestamp": "2026-01-26T22:07:07.332Z"
+  },
+  {
+    "id": "1769465692423",
+    "deviceId": "1769465640587",
+    "deviceName": "cole",
+    "version": "1.0.21",
+    "status": "success",
+    "timestamp": "2026-01-26T22:14:52.423Z"
+  },
+  {
+    "id": "1769471832946",
+    "deviceId": "1769465640587",
+    "deviceName": "cole",
+    "version": "1.0.21",
+    "status": "success",
+    "timestamp": "2026-01-26T23:57:12.946Z"
+  },
+  {
+    "id": "1769473749536",
+    "deviceId": "1769465640587",
+    "deviceName": "cole",
+    "version": "1.0.21",
+    "status": "success",
+    "timestamp": "2026-01-27T00:29:09.536Z"
+  },
+  {
+    "id": "1769473750956",
+    "deviceId": "1769465640587",
+    "deviceName": "cole",
+    "version": "1.0.21",
+    "status": "success",
+    "timestamp": "2026-01-27T00:29:10.956Z"
+  },
+  {
+    "id": "1769473751628",
+    "deviceId": "1769465640587",
+    "deviceName": "cole",
+    "version": "1.0.21",
+    "status": "success",
+    "timestamp": "2026-01-27T00:29:11.628Z"
   }
 ]

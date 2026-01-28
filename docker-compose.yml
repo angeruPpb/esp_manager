@@ -1,0 +1,62 @@
+services:
+  # ========== MOSQUITTO MQTT BROKER ==========
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: esp32_mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+      - ./mosquitto/config/passwd:/mosquitto/config/passwd
+    entrypoint: >
+      sh -c "
+      chmod 0600 /mosquitto/config/passwd 2>/dev/null || true &&
+      exec mosquitto -c /mosquitto/config/mosquitto.conf
+      "
+    networks:
+      - esp32_network
+    # ✅ HEALTHCHECK CON NETCAT
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ========== NESTJS APPLICATION ==========
+  esp_manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esp32_manager
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_USERNAME=nodejs_server
+      - MQTT_PASSWORD=char5524
+    volumes:
+      - ./data:/app/data
+      - ./public/uploads:/app/public/uploads
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - esp32_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  esp32_network:
+    driver: bridge

@@ -307,10 +307,10 @@ export class EspService {
       this.markDeviceUpToDate(firmware.deviceId);
     }
 
-    // Eliminar archivo físico
+    // ✅✅✅ Eliminar archivo físico
     const filePath = join(this.uploadDir, 'firmware', firmware.filename);
     if (existsSync(filePath)) {
-      unlinkSync(filePath);
+      unlinkSync(filePath);  // 🔥 ESTO ELIMINA EL ARCHIVO
     }
 
     // Eliminar de la base de datos
@@ -320,7 +320,7 @@ export class EspService {
     console.log(`🗑️ Firmware eliminado: ${firmware.filename}`);
 
     return { success: true, message: 'Firmware eliminado' };
-  }
+}
 
   async deleteFirmwareByDeviceAndVersion(deviceId: string, version: string) {
     const firmwares = this.getFirmwareList();
@@ -372,5 +372,15 @@ export class EspService {
     const shortHash = hash.substring(0, 32);
     
     return `esp32_${shortHash}`;
+  }
+  public compareVersions(v1: string, v2: string): number {
+    const parts1 = v1.replace('v', '').split('.').map(Number);
+    const parts2 = v2.replace('v', '').split('.').map(Number);
+
+    for (let i = 0; i < 3; i++) {
+      if (parts1[i] > parts2[i]) return 1;
+      if (parts1[i] < parts2[i]) return -1;
+    }
+    return 0;
   }
 }
