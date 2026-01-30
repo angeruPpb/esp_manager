@@ -4,7 +4,11 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: esp32_mosquitto
     restart: unless-stopped
-    network_mode: host  # Usar red del host
+    ports:
+      - "1883:1883"  # Puerto MQTT
+      - "9001:9001"  # WebSocket 
+    networks:
+      - esp32_network
     volumes:
       - ./mosquitto/config/mosquitto.conf:/tmp/mosquitto.conf:ro
       - mosquitto_config:/mosquitto/config
@@ -34,11 +38,14 @@ services:
       dockerfile: Dockerfile
     container_name: esp32_manager
     restart: unless-stopped
-    network_mode: host  # Usar red del host también
+    ports:
+      - "3000:3000"
+    networks:
+      - esp32_network
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - MQTT_BROKER_URL=mqtt://127.0.0.1:1883  # Cambiar a 127.0.0.1
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883  # Usar nombre del servicio
       - MQTT_USERNAME=nodejs_server
       - MQTT_PASSWORD=char5524
       - MOSQUITTO_PASSWD_PATH=/mosquitto/config/passwd
