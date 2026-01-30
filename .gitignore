@@ -19,7 +19,7 @@ mosquitto/log/
 
 # ========== Datos de la aplicación ==========
 data/*
-public/uploads/firmware/*
+
 
 # ========== IDEs ==========
 .vscode/
