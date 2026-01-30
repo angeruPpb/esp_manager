@@ -45,8 +45,6 @@ services:
     entrypoint: >
       sh -c "
       mkdir -p /app/data /app/public/uploads/firmware &&
-      chmod -R 755 /app/data &&
-      chmod -R 755 /app/public/uploads &&
       exec node dist/main
       "
 
