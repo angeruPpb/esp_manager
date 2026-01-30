@@ -6,7 +6,7 @@ import { EspGateway } from '../esp/esp.gateway';
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
   private client: mqtt.MqttClient;
-private readonly BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
+private readonly BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://127.0.0.1:1883';
 private readonly USERNAME = process.env.MQTT_USERNAME || 'nodejs_server';
 private readonly PASSWORD = process.env.MQTT_PASSWORD || 'char5524';
   

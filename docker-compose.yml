@@ -4,21 +4,28 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: esp32_mosquitto
     restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
+    network_mode: host  # Usar red del host
     volumes:
-      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
-      - ./mosquitto/config/passwd:/mosquitto/config/passwd
+      - ./mosquitto/config/mosquitto.conf:/tmp/mosquitto.conf:ro
+      - mosquitto_config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
     entrypoint: >
       sh -c "
-      chmod 0600 /mosquitto/config/passwd 2>/dev/null || true &&
+      cp /tmp/mosquitto.conf /mosquitto/config/mosquitto.conf &&
+      chown mosquitto:mosquitto /mosquitto/config/mosquitto.conf &&
+      if [ ! -f /mosquitto/config/passwd ]; then
+        touch /mosquitto/config/passwd &&
+        chown mosquitto:mosquitto /mosquitto/config/passwd &&
+        chmod 0600 /mosquitto/config/passwd &&
+        mosquitto_passwd -b /mosquitto/config/passwd nodejs_server char5524 &&
+        mosquitto_passwd -b /mosquitto/config/passwd esp32_client char5524
+      fi &&
+      chown mosquitto:mosquitto /mosquitto/config/passwd &&
+      chmod 0600 /mosquitto/config/passwd &&
+      chown -R mosquitto:mosquitto /mosquitto/data /mosquitto/log &&
       exec mosquitto -c /mosquitto/config/mosquitto.conf
       "
-    networks:
-      - esp32_network
 
   # ========== NESTJS APPLICATION ==========
   esp_manager:
@@ -27,21 +34,25 @@ services:
       dockerfile: Dockerfile
     container_name: esp32_manager
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    network_mode: host  # Usar red del host también
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_BROKER_URL=mqtt://127.0.0.1:1883  # Cambiar a 127.0.0.1
       - MQTT_USERNAME=nodejs_server
       - MQTT_PASSWORD=char5524
+      - MOSQUITTO_PASSWD_PATH=/mosquitto/config/passwd
+      - MOSQUITTO_CONFIG_PATH=/mosquitto/config
+      - MOSQUITTO_DATA_PATH=/mosquitto/data
+      - MOSQUITTO_LOG_PATH=/mosquitto/log
     volumes:
-      - ./data:/app/data
-      - ./public/uploads:/app/public/uploads
+      - app_data:/app/data
+      - app_uploads:/app/public/uploads
+      - mosquitto_config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data:ro
+      - mosquitto_log:/mosquitto/log:ro
     depends_on:
       - mosquitto
-    networks:
-      - esp32_network
     entrypoint: >
       sh -c "
       mkdir -p /app/data /app/public/uploads/firmware &&
@@ -51,3 +62,10 @@ services:
 networks:
   esp32_network:
     driver: bridge
+
+volumes:
+  mosquitto_config:
+  mosquitto_data:
+  mosquitto_log:
+  app_data:
+  app_uploads:
