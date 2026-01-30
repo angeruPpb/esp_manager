@@ -1,7 +1,7 @@
 # ========== Node.js ==========
 node_modules/
 dist/
-*.log
+
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
@@ -13,9 +13,7 @@ yarn-error.log*
 !.env.example
 
 # ========== Mosquitto MQTT ==========
-mosquitto/config/passwd
-mosquitto/data/
-mosquitto/log/
+
 
 # ========== Datos de la aplicación ==========
 data/*
