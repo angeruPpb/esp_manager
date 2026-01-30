@@ -401,10 +401,10 @@ private async handleDownloadComplete(
         });
 
         this.updateTimeouts.delete(apiKey);
-      }, 60000);
+      }, 180000);
 
       this.updateTimeouts.set(apiKey, timeout);
-      console.log(`⏱️ Timeout de 60s iniciado para ${device.name}`);
+      console.log(`⏱️ Timeout de 180s iniciado para ${device.name}`);
 
       return { success: true, message: 'Comando enviado' };
     } catch (error) {
